@@ -15,6 +15,7 @@ export default function CameraNode() {
   const [viewers, setViewers] = useState(0)
   const [started, setStarted] = useState<number | null>(null)
   const [elapsed, setElapsed] = useState(0)
+  const [cameraClock, setCameraClock] = useState("")
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null)
   const [intrusion, setIntrusion] = useState(false)
   const helperUrl = process.env.NEXT_PUBLIC_HELPER_URL || ""
@@ -50,6 +51,12 @@ export default function CameraNode() {
   }, [])
 
   useEffect(() => {
+    setCameraClock(new Date().toLocaleTimeString())
+    const ticker = setInterval(() => setCameraClock(new Date().toLocaleTimeString()), 1000)
+    return () => clearInterval(ticker)
+  }, [])
+
+  useEffect(() => {
     if (!started) return
     const ticker = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000)
     return () => clearInterval(ticker)
@@ -63,7 +70,7 @@ export default function CameraNode() {
     <Toaster theme="dark" position="top-center" />
     <header className="camera-top"><Link href="/viewer" className="brand"><span className="brand-mark"><Shield size={19} /></span> Sentinel<span>Eye</span></Link><span className={`live-pill ${state.toLowerCase()}`}><i />{state}</span></header>
     <div className="camera-center">{state !== "LIVE" && <div className="camera-wait"><Camera size={30} /><h1>{state === "ERROR" ? "Camera access needed" : "Starting camera node"}</h1><p>Allow camera access and keep this tab open to stream to the monitor.</p><button onClick={() => window.location.reload()} className="outline-button"><CameraOff size={16} /> Retry camera</button></div>}</div>
-    <div className="rec-label"><span className="rec-dot" /> REC <time>{new Date().toLocaleTimeString()}</time></div>
+    <div className="rec-label"><span className="rec-dot" /> REC <time>{cameraClock || "--:--:--"}</time></div>
     <footer className="camera-footer"><div><span className="meta-label">CAMERA NODE</span><strong>{PHONE_ID}</strong></div><div><span className="meta-label">VIEWERS</span><strong><Wifi size={15} /> {viewers}</strong></div><div><span className="meta-label">UPTIME</span><strong>{time}</strong></div><Link href="/viewer" className="monitor-link">Open monitor <ExternalLink size={14} /></Link></footer>
     <div className="camera-corner"><Radio size={15} /> {intrusion ? "PERSON IN RESTRICTED ZONE" : "Local camera stream"} · {helperUrl ? "AI monitoring active" : "helper not configured"}</div>
   </main>
