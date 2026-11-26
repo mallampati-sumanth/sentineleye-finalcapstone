@@ -1,10 +1,11 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { AuthGate } from '@/components/auth-gate'
 
 export const metadata: Metadata = {
   title: 'SentinelEye — AI Smart Surveillance',
-  description: 'Real-time camera monitoring, person detection, and ESP32 motion alerts.',
+  description: 'Private, remote camera monitoring with person detection, event snapshots, and configurable alerts.',
   generator: 'v0.app',
   applicationName: 'SentinelEye',
   icons: {
@@ -42,7 +43,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        {children}
+        <AuthGate>{children}</AuthGate>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

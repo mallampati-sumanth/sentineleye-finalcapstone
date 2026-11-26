@@ -1,17 +1,39 @@
-"use client"
+'use client'
 
-import { useEffect,useState } from "react"
-import Link from "next/link"
-import { ArrowDownToLine, ArrowLeft, Camera, Filter, Image, Trash2 } from "lucide-react"
-import { toast,Toaster } from "sonner"
-import { fmtTime,helperRequest } from "@/lib/sentinel"
+import { useState } from 'react'
+import Link from 'next/link'
+import { ArrowDownToLine, ArrowLeft, Camera, Filter, Image, Trash2 } from 'lucide-react'
+import { toast, Toaster } from 'sonner'
+import { mutate } from 'swr'
+import { fmtTime } from '@/lib/sentinel'
+import { useSentinelEvents, type SentinelEvent } from '@/lib/hooks/use-sentinel-events'
+import { createClient } from '@/lib/supabase/client'
 
-type Snapshot={id:string;timestamp:number;type:string;url?:string;imageUrl?:string;confidence?:number}
-export default function SnapshotsPage(){const [items,setItems]=useState<Snapshot[]>([]);const [filter,setFilter]=useState("all");const [selected,setSelected]=useState<Snapshot|null>(null);const [loading,setLoading]=useState(true);const [error,setError]=useState("")
-useEffect(()=>{let alive=true;const load=async()=>{try{const data=await helperRequest("/snapshots");if(alive){setItems(data);setError("")}}catch(e){if(alive)setError(e instanceof Error?e.message:"Could not load snapshots")}finally{if(alive)setLoading(false)}};load();return()=>{alive=false}},[])
-const remove=(item:Snapshot)=>{toast.message("Snapshot deletion is only available on the local helper filesystem")}
-const imageSource=(item:Snapshot)=>{const url=item.url||item.imageUrl;return url?.startsWith("/")?`${process.env.NEXT_PUBLIC_HELPER_URL||""}${url}`:url}
-const download=(item:Snapshot)=>{const url=imageSource(item);if(!url){toast.error("Image URL unavailable");return}const anchor=document.createElement("a");anchor.href=url;anchor.download=`sentinel-${item.id}.jpg`;anchor.click()}
-const visible=items.filter(item=>filter==="all"||item.type?.toLowerCase()===filter)
-return <main className="settings-shell"><Toaster theme="dark" position="top-right"/><header className="settings-header"><Link href="/viewer" className="back-link"><ArrowLeft size={16}/> Back to monitor</Link><div className="brand"><span className="brand-mark"><Camera size={17}/></span> Sentinel<span>Eye</span></div></header><section className="settings-content gallery-content"><p className="eyebrow">EVENT ARCHIVE</p><h1>Snapshot gallery</h1><p className="page-subtitle">Captured images from AI and motion-triggered alerts.</p><div className="gallery-toolbar"><div className="filter-control"><Filter size={15}/><select aria-label="Filter snapshots" value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">All events</option><option value="pir">PIR motion</option><option value="ai">AI detection</option></select></div><span className="muted">{visible.length} snapshots</span></div>{error&&<div className="network-warning">{error}<button onClick={()=>window.location.reload()}>Retry</button></div>}
-{loading?<div className="snapshot-grid">{[1,2,3,4,5,6].map(n=><div className="snapshot-skeleton" key={n}/>)}</div>:visible.length?<div className="snapshot-grid">{visible.map(item=><article className="snapshot-card" key={item.id}><button className="snapshot-image" onClick={()=>setSelected(item)}>{imageSource(item)?<img src={imageSource(item)} alt={`${item.type} snapshot from ${fmtTime(item.timestamp)}`} loading="lazy"/>:<div className="snapshot-placeholder"><Image size={24}/><span>Image unavailable</span></div>}<span className="snapshot-type">{item.type||"Event"}</span></button><div className="snapshot-meta"><div><strong>{item.type||"Alert capture"}</strong><span>{fmtTime(item.timestamp)}{item.confidence?` · ${Math.round(item.confidence*100)}% confidence`:""}</span></div><button className="icon-button" aria-label="Download snapshot" onClick={()=>download(item)}><ArrowDownToLine size={15}/></button><button className="icon-button" aria-label="Delete snapshot" onClick={()=>remove(item)}><Trash2 size={15}/></button></div></article>)}</div>:<div className="gallery-empty"><span className="empty-icon"><Camera size={25}/></span><h2>No intrusions recorded yet</h2><p>When the camera detects motion or a person in the restricted zone, snapshots will appear here.</p><Link href="/viewer" className="button button-primary">Open monitoring console</Link></div>}</section>{selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><div className="snapshot-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" aria-label="Close" onClick={()=>setSelected(null)}>×</button>{imageSource(selected)?<img src={imageSource(selected)} alt="Selected security snapshot"/>:<div className="modal-empty"><Camera size={30}/><span>Snapshot unavailable</span></div>}<strong>{selected.type} · {fmtTime(selected.timestamp)}{selected.confidence?` · ${Math.round(selected.confidence*100)}% confidence`:""}</strong></div></div>}</main>}
+type Snapshot = SentinelEvent
+
+export default function SnapshotsPage() {
+  const { data: items = [], error, isLoading } = useSentinelEvents()
+  const [filter, setFilter] = useState('all')
+  const [selected, setSelected] = useState<Snapshot | null>(null)
+  const visible = items.filter(item => filter === 'all' || item.type.toLowerCase() === filter)
+  const remove = async (item: Snapshot) => {
+    const supabase = createClient()
+    const { data: row, error: readError } = await supabase.from('sentinel_events').select('storage_path').eq('id', item.id).single()
+    if (readError) { toast.error('Could not remove this event.'); return }
+    const { error: deleteError } = await supabase.from('sentinel_events').delete().eq('id', item.id)
+    if (deleteError) { toast.error('Could not remove this event.'); return }
+    if (row?.storage_path) await supabase.storage.from('sentinel-snapshots').remove([row.storage_path])
+    setSelected(null)
+    await mutate('sentinel-events')
+    toast.success('Event removed from your archive')
+  }
+  const download = (item: Snapshot) => {
+    if (!item.imageUrl) { toast.error('Snapshot image unavailable'); return }
+    const anchor = document.createElement('a')
+    anchor.href = item.imageUrl
+    anchor.download = `sentinel-${item.id}.jpg`
+    anchor.click()
+  }
+  return <main className="settings-shell"><Toaster theme="dark" position="top-right"/><header className="settings-header"><Link href="/viewer" className="back-link"><ArrowLeft size={16}/> Back to monitor</Link><div className="brand"><span className="brand-mark"><Camera size={17}/></span> Sentinel<span>Eye</span></div></header><section className="settings-content gallery-content"><p className="eyebrow">EVENT ARCHIVE</p><h1>Snapshot gallery</h1><p className="page-subtitle">Private camera snapshots and person-detection events from your account.</p><div className="gallery-toolbar"><div className="filter-control"><Filter size={15}/><select aria-label="Filter snapshots" value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All events</option><option value="ai">Person detected</option><option value="pir">PIR motion</option></select></div><span className="muted">{visible.length} events</span></div>{error&&<div className="network-warning">Your event archive could not be loaded.<button onClick={() => void mutate('sentinel-events')}>Retry</button></div>}
+    {isLoading?<div className="snapshot-grid">{[1,2,3,4,5,6].map(number=><div className="snapshot-skeleton" key={number}/>)}</div>:visible.length?<div className="snapshot-grid">{visible.map(item=><article className="snapshot-card" key={item.id}><button className="snapshot-image" onClick={()=>setSelected(item)}>{item.imageUrl?<img src={item.imageUrl} alt={`Person detection snapshot from ${fmtTime(item.timestamp)}`} loading="lazy"/>:<div className="snapshot-placeholder"><Image size={24}/><span>Image unavailable</span></div>}<span className="snapshot-type">{item.type==='AI'?'PERSON DETECTED':'PIR MOTION'}</span></button><div className="snapshot-meta"><div><strong>{item.type==='AI'?'Person detected':'PIR motion'}</strong><span>{fmtTime(item.timestamp)}{item.confidence!=null?` · ${Math.round(item.confidence*100)}% confidence`:''}</span></div><button className="icon-button" aria-label="Download snapshot" onClick={()=>download(item)}><ArrowDownToLine size={15}/></button><button className="icon-button" aria-label="Delete snapshot" onClick={()=>void remove(item)}><Trash2 size={15}/></button></div></article>)}</div>:<div className="gallery-empty"><span className="empty-icon"><Camera size={25}/></span><h2>No events recorded yet</h2><p>Keep the camera node open on a signed-in phone. Person detections inside your restricted zone will appear here.</p><Link href="/" className="button button-primary">Open camera node</Link></div>}</section>{selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><div className="snapshot-modal" onClick={event=>event.stopPropagation()}><button className="modal-close" aria-label="Close" onClick={()=>setSelected(null)}>×</button>{selected.imageUrl?<img src={selected.imageUrl} alt="Selected private detection snapshot"/>:<div className="modal-empty"><Camera size={30}/><span>Snapshot unavailable</span></div>}<strong>{selected.type==='AI'?'Person detected':'PIR motion'} · {fmtTime(selected.timestamp)}{selected.confidence!=null?` · ${Math.round(selected.confidence*100)}% confidence`:''}</strong></div></div>}</main>
+}
