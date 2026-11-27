@@ -68,7 +68,15 @@ export default function CameraNode() {
           throw new Error("Open this page on localhost or HTTPS to use the camera.")
         }
 
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30, max: 30 },
+          },
+          audio: false,
+        })
         if (!active) { stream.getTracks().forEach((track) => track.stop()); return }
         streamRef.current = stream
         if (videoRef.current) { videoRef.current.srcObject = stream; setVideoElement(videoRef.current) }
