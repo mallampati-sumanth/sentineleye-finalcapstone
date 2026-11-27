@@ -10,9 +10,17 @@ SentinelEye is a local-network smart-surveillance prototype: a phone browser can
 
 ## Start the web console
 
-Install project dependencies and run the Next.js development server using the existing project scripts. Set `NEXT_PUBLIC_HELPER_URL` in the app environment to the helper's LAN URL, for example `http://192.168.1.10:8000`, then open `/viewer`. Run the monitor and phone camera node from the same origin or HTTPS; browsers require a secure context for camera access.
+Copy `.env.local.example` to `.env.local` and set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to your Supabase project's URL and public publishable/anon key. These values are available in the Vercel project's Environment Variables or Supabase project API settings; never use a service-role or secret key in the browser app. Set `NEXT_PUBLIC_HELPER_URL` to your helper's URL (for example `http://127.0.0.1:8765` for local development or `http://192.168.1.10:8000` on a LAN). Restart the Next.js dev server after changing `.env.local`, then open `/viewer`. Run the monitor and phone camera node from the same origin or HTTPS; browsers require a secure context for camera access.
+
+To test notifications locally, add your email provider's `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM`, plus `TELEGRAM_BOT_TOKEN`, to the server-only `.env.local` file. Never prefix these secrets with `NEXT_PUBLIC_` or commit `.env.local`. In SentinelEye Settings, enter the recipient email and Telegram chat ID, enable the channels, and save. Use **Test email** and **Test Telegram** to send a test message through each provider. For Gmail, use an app password rather than your account password. Telegram recipients must start a chat with the bot before it can message them. Restart the dev server after changing environment variables. A real person-detection event sends the normal alert; email provider configuration and Telegram text delivery are exercised by the test buttons.
 
 Open `/` on a phone to use it as a camera node. Grant camera permission and leave the tab open. On the monitor, select **Connect camera**. PeerJS uses its public signaling service by default; local-network peer connectivity can still depend on NAT/firewall rules. No video is uploaded to the helper by the camera node.
+
+## Configure deployed sign-in
+
+In the Vercel project, set `NEXT_PUBLIC_SUPABASE_URL` to the Supabase project URL and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to that project's publishable/anon key. These are public client settings; never use a service-role or secret key for either variable. Redeploy after changing them.
+
+In Supabase Authentication URL configuration, set the production site URL to the deployed app's origin and add `https://<your-deployment-domain>/auth/callback` to the allowed redirect URLs. Also add any Vercel preview origins that need email confirmation. Email/password sign-in requires an existing account; if email confirmation is enabled, confirm the account before signing in. For unexpected auth failures, check Supabase Authentication logs.
 
 ## Run the Python helper
 

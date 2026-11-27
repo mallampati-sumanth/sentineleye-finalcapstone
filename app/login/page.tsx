@@ -5,6 +5,27 @@ import { useRouter } from 'next/navigation'
 import { Camera, Eye, EyeOff, Shield } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
+function signInErrorMessage(authError: { code?: string; status?: number }) {
+  if (authError.code === 'email_not_confirmed') {
+    return 'Confirm your email using the link we sent before signing in.'
+  }
+  if (authError.status === 429) {
+    return 'Too many attempts. Wait a moment, then try again.'
+  }
+  if (authError.code === 'invalid_credentials') {
+    return 'Invalid email or password.'
+  }
+  if (authError.status === 0) {
+    return 'Could not reach Supabase Auth. Check the deployed Supabase URL and public anon key, then try again.'
+  }
+
+  const reference = authError.code ?? (authError.status ? `HTTP ${authError.status}` : 'unknown error')
+  if (authError.status && authError.status >= 500) {
+    return `Supabase Auth returned ${reference}. Check Authentication logs in your Supabase dashboard.`
+  }
+  return `Sign-in failed (${reference}). Check that the account exists and can sign in with email and password.`
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const [confirmationError, setConfirmationError] = useState(false)
@@ -29,12 +50,7 @@ export default function LoginPage() {
     try {
       if (mode === 'signin') {
         const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
-        if (authError) {
-          if (authError.code === 'email_not_confirmed') throw new Error('Confirm your email using the link we sent before signing in.')
-          if (authError.status === 429) throw new Error('Too many attempts. Wait a moment, then try again.')
-          if (authError.code === 'invalid_credentials') throw new Error('Invalid email or password.')
-          throw new Error('Sign in is temporarily unavailable. Please try again.')
-        }
+        if (authError) throw new Error(signInErrorMessage(authError))
         router.replace('/viewer')
         return
       }
