@@ -35,9 +35,11 @@ export function DetectionOverlay({ video, onIntrusion }: Props) {
       }
     }
 
-    const saveDetection = async (blob: Blob, confidence: number) => {
+    const saveDetection = async (blob: Blob, personCrop: Blob, confidence: number) => {
       const form = new FormData()
-      form.append('file', blob, `sentinel-${Date.now()}.jpg`)
+      const timestamp = Date.now()
+      form.append('file', blob, `sentinel-${timestamp}.jpg`)
+      form.append('person', personCrop, `sentinel-person-${timestamp}.jpg`)
       form.append('metadata', JSON.stringify({ confidence, zone }))
       try {
         const response = await fetch('/api/events', { method: 'POST', body: form })
@@ -48,8 +50,12 @@ export function DetectionOverlay({ video, onIntrusion }: Props) {
         }
         if (!response.ok) throw new Error(result.error || 'Could not save the detection.')
         blockedUntilRef.current = Date.now() + (settings?.alert_cooldown_seconds ?? 300) * 1000
-        const undelivered = Object.entries(result.alerts ?? {}).filter(([, status]) => status === 'failed' || status === 'not_configured')
-        if (undelivered.length) toast.warning('Event saved, but an alert channel is not ready. Check your provider setup.')
+        const alertStatuses = Object.entries(result.alerts ?? {})
+        const alertSummary = alertStatuses.map(([channel, status]) => `${channel}: ${status}`).join(' · ')
+        const undelivered = alertStatuses.some(([, status]) => status === 'failed' || status === 'not_configured')
+        if (undelivered) toast.warning('Person event saved, but an alert channel needs setup.', { description: alertSummary })
+        else if (alertStatuses.some(([, status]) => status === 'sent')) toast.success('Person event saved and alert delivered.', { description: alertSummary })
+        else toast.info('Person event saved; notifications are disabled.', { description: alertSummary })
         callbackRef.current()
       } catch (error) {
         blockedUntilRef.current = Date.now() + 5000
@@ -82,11 +88,9 @@ export function DetectionOverlay({ video, onIntrusion }: Props) {
       try {
         const predictions: Prediction[] = await model.detect(video)
         if (!alive) return
-        let found = false
-        const personScores: number[] = []
+        let target: Prediction | null = null
         for (const prediction of predictions) {
           if (prediction.class !== 'person' || prediction.score < 0.5) continue
-          personScores.push(prediction.score)
           const [x, y, boxWidth, boxHeight] = prediction.bbox
           ctx.strokeStyle = '#ff3b5c'
           ctx.lineWidth = 3
@@ -96,17 +100,29 @@ export function DetectionOverlay({ video, onIntrusion }: Props) {
           ctx.fillText(`PERSON ${Math.round(prediction.score * 100)}%`, x * scale + offsetX, Math.max(16, y * scale + offsetY - 5))
           const centerX = (x + boxWidth / 2) / width
           const centerY = (y + boxHeight / 2) / height
-          if (centerX >= zone.x && centerX <= zone.x + zone.w && centerY >= zone.y && centerY <= zone.y + zone.h) found = true
+          if (centerX >= zone.x && centerX <= zone.x + zone.w && centerY >= zone.y && centerY <= zone.y + zone.h && (!target || prediction.score > target.score)) target = prediction
         }
-        if (found && Date.now() >= blockedUntilRef.current && Date.now() - lastAttemptRef.current > 5000) {
+        if (target && Date.now() >= blockedUntilRef.current && Date.now() - lastAttemptRef.current > 5000) {
           lastAttemptRef.current = Date.now()
+          const [x, y, boxWidth, boxHeight] = target.bbox
+          const padX = boxWidth * 0.14
+          const padY = boxHeight * 0.14
+          const cropX = Math.max(0, x - padX)
+          const cropY = Math.max(0, y - padY)
+          const cropWidth = Math.min(width - cropX, boxWidth + padX * 2)
+          const cropHeight = Math.min(height - cropY, boxHeight + padY * 2)
           const capture = document.createElement('canvas')
           capture.width = width
           capture.height = height
           capture.getContext('2d')?.drawImage(video, 0, 0, width, height)
-          capture.toBlob(blob => {
-            if (blob && alive) void saveDetection(blob, Math.max(...personScores))
-          }, 'image/jpeg', 0.82)
+          const personCapture = document.createElement('canvas')
+          personCapture.width = Math.max(1, Math.round(cropWidth))
+          personCapture.height = Math.max(1, Math.round(cropHeight))
+          personCapture.getContext('2d')?.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, personCapture.width, personCapture.height)
+          const toJpeg = (canvas: HTMLCanvasElement) => new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.86))
+          void Promise.all([toJpeg(capture), toJpeg(personCapture)]).then(([frameBlob, personBlob]) => {
+            if (frameBlob && personBlob && alive) void saveDetection(frameBlob, personBlob, target!.score)
+          })
         }
       } catch (error) {
         console.warn('SentinelEye inference frame failed', error)

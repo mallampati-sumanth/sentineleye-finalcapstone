@@ -15,8 +15,12 @@ export async function POST(request: Request) {
 
   const form = await request.formData()
   const file = form.get('file')
+  const personFile = form.get('person')
   if (!(file instanceof File) || !['image/jpeg', 'image/png'].includes(file.type) || file.size === 0 || file.size > MAX_IMAGE_BYTES) {
     return NextResponse.json({ error: 'Choose a JPEG or PNG snapshot smaller than 8 MB.' }, { status: 400 })
+  }
+  if (personFile != null && (!(personFile instanceof File) || !['image/jpeg', 'image/png'].includes(personFile.type) || personFile.size === 0 || personFile.size > MAX_IMAGE_BYTES)) {
+    return NextResponse.json({ error: 'The person crop must be a JPEG or PNG image smaller than 8 MB.' }, { status: 400 })
   }
 
   const metadataValue = String(form.get('metadata') ?? '{}')
@@ -42,6 +46,7 @@ export async function POST(request: Request) {
   const id = crypto.randomUUID()
   const storagePath = `${user.id}/${id}.${file.type === 'image/png' ? 'png' : 'jpg'}`
   const image = Buffer.from(await file.arrayBuffer())
+  const personImage = personFile instanceof File ? Buffer.from(await personFile.arrayBuffer()) : null
   const { error: uploadError } = await supabase.storage.from('sentinel-snapshots').upload(storagePath, image, {
     contentType: file.type,
     cacheControl: '3600',
@@ -90,11 +95,30 @@ export async function POST(request: Request) {
           secure: Number(SMTP_PORT || 587) === 465,
           auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
         })
+        const confidenceText = `${Math.round(confidence * 100)}%`
+        const detailAttachment = personImage && personFile instanceof File
+          ? { filename: 'sentinel-person-detail.jpg', content: personImage, contentType: personFile.type, cid: 'sentinel-person-detail' }
+          : null
         await transport.sendMail({
           from: SMTP_FROM,
           to: settings.recipient_email,
-          subject: 'SentinelEye: person detected in your restricted zone',
-          text: `A person was detected at ${eventTime} (${Math.round(confidence * 100)}% confidence). Open your signed-in SentinelEye monitor to review the private snapshot.`,
+          subject: 'SentinelEye security alert: person detected',
+          text: [
+            'SENTINELEYE SECURITY ALERT',
+            '',
+            'A person was detected inside your restricted monitoring zone.',
+            `Detected: ${eventTime}`,
+            `Model confidence: ${confidenceText}`,
+            `Event reference: ${event.id}`,
+            '',
+            'The full-frame snapshot is attached. A person-detail crop is also attached when available.',
+            'Sign in to SentinelEye to review your private event history.',
+          ].join('\n'),
+          html: `<div style="margin:0;padding:32px 16px;background:#f3f5f8;font-family:Arial,sans-serif;color:#202633"><div style="max-width:600px;margin:0 auto;padding:28px;background:#fff;border:1px solid #e1e5ec;border-radius:12px"><p style="margin:0 0 8px;color:#687386;font-size:12px;font-weight:700;letter-spacing:1px">SENTINELEYE SECURITY ALERT</p><h1 style="margin:0 0 14px;font-size:24px">Person detected</h1><p style="margin:0 0 22px;line-height:1.6">A person was detected inside your restricted monitoring zone.</p><table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:22px"><tr><td style="padding:9px 0;color:#687386">Detected</td><td style="padding:9px 0;text-align:right;font-weight:700">${eventTime}</td></tr><tr><td style="padding:9px 0;color:#687386;border-top:1px solid #edf0f4">Model confidence</td><td style="padding:9px 0;text-align:right;font-weight:700;border-top:1px solid #edf0f4">${confidenceText}</td></tr><tr><td style="padding:9px 0;color:#687386;border-top:1px solid #edf0f4">Event reference</td><td style="padding:9px 0;text-align:right;font-family:monospace;border-top:1px solid #edf0f4">${event.id}</td></tr></table><h2 style="margin:0 0 10px;font-size:16px">Captured images</h2><p style="margin:0 0 10px;color:#687386;font-size:13px">The full frame${detailAttachment ? ' and person-detail crop' : ''} are attached to this email.</p><img src="cid:sentinel-overview" alt="Full-frame detection snapshot" style="display:block;width:100%;max-width:520px;height:auto;margin:12px 0;border-radius:8px">${detailAttachment ? '<img src="cid:sentinel-person-detail" alt="Person detail crop" style="display:block;width:100%;max-width:520px;height:auto;margin:12px 0;border-radius:8px">' : ''}<p style="margin:22px 0 0;color:#687386;font-size:12px;line-height:1.5">Review this private event by signing in to SentinelEye. This automated message was sent because email alerts are enabled for your account.</p></div></div>`,
+          attachments: [
+            { filename: 'sentinel-overview.jpg', content: image, contentType: file.type, cid: 'sentinel-overview' },
+            ...(detailAttachment ? [detailAttachment] : []),
+          ],
         })
         alerts.email = 'sent'
       } catch {
@@ -111,10 +135,23 @@ export async function POST(request: Request) {
       try {
         const telegramForm = new FormData()
         telegramForm.set('chat_id', settings.telegram_chat_id)
-        telegramForm.set('caption', `SentinelEye detected a person at ${eventTime} (${Math.round(confidence * 100)}% confidence).`)
-        telegramForm.set('photo', new Blob([image], { type: file.type }), file.name || 'sentinel-snapshot.jpg')
-        const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: telegramForm, signal: AbortSignal.timeout(8000) })
-        alerts.telegram = response.ok ? 'sent' : 'failed'
+        const caption = `SENTINELEYE SECURITY ALERT\nPerson detected in your restricted zone\nDetected: ${eventTime}\nModel confidence: ${Math.round(confidence * 100)}%\nEvent: ${event.id}`
+        let endpoint = 'sendPhoto'
+        if (personImage && personFile instanceof File) {
+          endpoint = 'sendMediaGroup'
+          telegramForm.set('media', JSON.stringify([
+            { type: 'photo', media: 'attach://overview', caption },
+            { type: 'photo', media: 'attach://person' },
+          ]))
+          telegramForm.set('overview', new Blob([image], { type: file.type }), 'sentinel-overview.jpg')
+          telegramForm.set('person', new Blob([personImage], { type: personFile.type }), 'sentinel-person-detail.jpg')
+        } else {
+          telegramForm.set('caption', caption)
+          telegramForm.set('photo', new Blob([image], { type: file.type }), 'sentinel-overview.jpg')
+        }
+        const response = await fetch(`https://api.telegram.org/bot${token}/${endpoint}`, { method: 'POST', body: telegramForm, signal: AbortSignal.timeout(8000) })
+        const result = await response.json().catch(() => null)
+        alerts.telegram = response.ok && result?.ok === true ? 'sent' : 'failed'
       } catch {
         alerts.telegram = 'failed'
       }
