@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { Activity, Bell, Camera, CameraOff, Circle, ChevronDown, CircleHelp, Clock3, Expand, Image, Link2, Radio, Shield, ShieldAlert, Siren, Video, Volume2, VolumeX, Wifi, Zap } from "lucide-react"
+import { Activity, Bell, Camera, CameraOff, Circle, ChevronDown, CircleHelp, Clock3, Expand, Image, Link2, PhoneOff, Radio, Shield, ShieldAlert, Siren, Video, Volume2, VolumeX, Wifi, Zap } from "lucide-react"
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from "recharts"
 import { toast, Toaster } from "sonner"
 import { BrandLogo } from "@/components/brand-logo"
-import { DEFAULT_ZONE, fmtTime, HELPER_URL, helperRequest } from "@/lib/sentinel"
+import { DEFAULT_ZONE, fmtTime, HELPER_URL, helperRequest, PEER_CONFIG } from "@/lib/sentinel"
 import { useSentinelEvents, type SentinelEvent } from "@/lib/hooks/use-sentinel-events"
 import { DEFAULT_SETTINGS, saveSentinelSettings, useSentinelSettings } from "@/lib/hooks/use-sentinel-settings"
 import { mutate } from "swr"
@@ -41,6 +41,7 @@ function cameraConnectionError(error: PeerError<string>) {
 export default function Viewer() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const placeholderRef = useRef<MediaStream | null>(null)
   const peerRef = useRef<PeerJS | null>(null)
   const cameraCallRef = useRef<MediaConnection | null>(null)
   const [status, setStatus] = useState<HelperStatus | null>(null)
@@ -55,6 +56,7 @@ export default function Viewer() {
   const [sound, setSound] = useState(true)
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const [hasVideoFrame, setHasVideoFrame] = useState(false)
   const [cameraError, setCameraError] = useState("")
   const [clock, setClock] = useState<Date | null>(null)
   const [cooldown, setCooldown] = useState(0)
@@ -82,8 +84,15 @@ export default function Viewer() {
     }
     refreshStatus()
     const a = setInterval(refreshStatus, 3000)
-    return () => { clearInterval(tick); clearInterval(a); cameraCallRef.current?.close(); peerRef.current?.destroy(); streamRef.current?.getTracks().forEach((track) => track.stop()) }
+    return () => { clearInterval(tick); clearInterval(a); cameraCallRef.current?.close(); peerRef.current?.destroy(); placeholderRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current?.getTracks().forEach((track) => track.stop()) }
   }, [])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !connected || !streamRef.current) return
+    if (video.srcObject !== streamRef.current) video.srcObject = streamRef.current
+    void video.play().catch(() => {})
+  }, [connected])
 
   useEffect(() => {
     if (!events.length) return
@@ -128,10 +137,11 @@ export default function Viewer() {
     }
     setConnected(false)
     setConnecting(true)
+    setHasVideoFrame(false)
     setCameraError("")
     try {
       const { default: Peer } = await import("peerjs")
-      const peer = new Peer()
+      const peer = new Peer(PEER_CONFIG)
       peerRef.current = peer
       let timeout: ReturnType<typeof setTimeout> | null = null
       let placeholder: MediaStream | null = null
@@ -146,12 +156,14 @@ export default function Viewer() {
         settled = true
         clearConnectionTimeout()
         placeholder?.getTracks().forEach((track) => track.stop())
+        if (placeholderRef.current === placeholder) placeholderRef.current = null
         if (cameraCallRef.current === call) cameraCallRef.current = null
         if (peerRef.current === peer) peerRef.current = null
         call?.close()
         peer.destroy()
         setConnected(false)
         setConnecting(false)
+        setHasVideoFrame(false)
         setCameraError(message)
         toast.error(message)
       }
@@ -165,9 +177,12 @@ export default function Viewer() {
           return
         }
         const canvas = document.createElement("canvas")
-        canvas.width = 1
-        canvas.height = 1
+        canvas.width = 2
+        canvas.height = 2
+        const ctx = canvas.getContext("2d")
+        if (ctx) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 2, 2) }
         placeholder = canvas.captureStream(1)
+        placeholderRef.current = placeholder
         call = peer.call(targetPeerId, placeholder)
         if (!call) {
           fail("Could not start the camera call. Check browser WebRTC support.")
@@ -179,7 +194,6 @@ export default function Viewer() {
           if (settled) return
           settled = true
           clearConnectionTimeout()
-          placeholder?.getTracks().forEach((track) => track.stop())
           streamRef.current = stream
           if (videoRef.current) {
             videoRef.current.srcObject = stream
@@ -220,6 +234,22 @@ export default function Viewer() {
       toast.error(message)
     }
   }
+  const disconnectPhone = () => {
+    cameraCallRef.current?.close()
+    peerRef.current?.destroy()
+    placeholderRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    cameraCallRef.current = null
+    peerRef.current = null
+    placeholderRef.current = null
+    streamRef.current = null
+    if (videoRef.current) videoRef.current.srcObject = null
+    setConnected(false)
+    setConnecting(false)
+    setHasVideoFrame(false)
+    setCameraError("")
+    toast.info("Camera disconnected")
+  }
   const saveZone = async () => { try { await saveSentinelSettings({ ...DEFAULT_SETTINGS, ...accountSettings, zone }); await mutate("sentinel-settings"); toast.success("Restricted zone synced to your account") } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save restricted zone") } }
   const setRect = (event: React.MouseEvent<HTMLDivElement>) => { if (!drawing) return; const bounds = event.currentTarget.getBoundingClientRect(); const x = (event.clientX - bounds.left) / bounds.width, y = (event.clientY - bounds.top) / bounds.height; if (!start) setStart({x,y}); else { setZone({ x: Math.min(start.x,x), y: Math.min(start.y,y), w: Math.abs(x-start.x), h: Math.abs(y-start.y) }); setStart(null); setDrawing(false) } }
   const send = async (path: string) => { try { await helperRequest(path, { method: "POST", body: JSON.stringify({}) }); toast.success(path.includes("test") ? "Alarm test sent" : "Alarm stopped") } catch { toast.error("Helper unavailable", { description: "Check the helper URL and network connection." }) } }
@@ -241,9 +271,9 @@ export default function Viewer() {
     {eventError && <div className="network-warning">Activity history is temporarily unavailable.<button onClick={() => void mutate("sentinel-events")}>Retry</button></div>}
     <section className="page-heading"><div><p className="eyebrow">CONTROL ROOM <span>·</span> NORTH ENTRY</p><h1>Live monitoring</h1><p className="page-subtitle">Real-time surveillance and intrusion detection</p></div><div className="heading-actions">{status?.online && <span className="updated"><span className="status-dot online"/> ESP32 connected</span>}<button className="button button-secondary" onClick={() => send("/test-alarm")}><Siren size={15}/> Test alarm</button></div></section>
     <section className="dashboard-grid"><div className="main-column">
-      <article className="panel feed-panel"><div className="panel-heading"><div><span className="eyebrow">CAMERA FEED</span><h2>North entrance <span className="camera-index">CAM 01</span></h2></div><div className="feed-actions"><span className={`live-pill ${connected ? "" : "offline-pill"}`}><i/>{connected ? "LIVE" : "STANDBY"}</span><button className="icon-button" title="Connect camera" onClick={connectPhone}><Link2 size={16}/></button></div></div>
+      <article className="panel feed-panel"><div className="panel-heading"><div><span className="eyebrow">CAMERA FEED</span><h2>North entrance <span className="camera-index">CAM 01</span></h2></div><div className="feed-actions"><span className={`live-pill ${connected ? "" : "offline-pill"}`}><i/>{connected ? "LIVE" : connecting ? "CONNECTING" : "STANDBY"}</span>{connected ? <button className="icon-button" title="Disconnect camera" aria-label="Disconnect camera" onClick={disconnectPhone}><PhoneOff size={16}/></button> : <button className="icon-button" title="Connect camera" aria-label="Connect camera" onClick={connectPhone}><Link2 size={16}/></button>}</div></div>
         <div className="feed-window" onClick={setRect} onMouseMove={(event) => { if (drawing && start) { const bounds = event.currentTarget.getBoundingClientRect(); const x=(event.clientX-bounds.left)/bounds.width,y=(event.clientY-bounds.top)/bounds.height; setZone({x:Math.min(start.x,x),y:Math.min(start.y,y),w:Math.abs(x-start.x),h:Math.abs(y-start.y)}) } }}>
-          <video ref={videoRef} autoPlay muted playsInline className={`remote-feed ${connected ? "visible" : ""}`} aria-label="Remote phone camera feed"/>{!connected && <div className="feed-no-signal"><div className="signal-icon"><Video size={29}/></div><strong>{connecting ? "Connecting…" : "No camera signal"}</strong><span role="status">{cameraError || "Start the camera node on your phone, wait for LIVE, then connect."}</span><button className="button button-primary" disabled={connecting} onClick={(event) => {event.stopPropagation(); void connectPhone()}}><Wifi size={15}/>{connecting ? "Connecting…" : "Connect camera"}</button></div>}
+          <video ref={videoRef} autoPlay muted playsInline onLoadedData={() => setHasVideoFrame(true)} onPlaying={() => setHasVideoFrame(true)} className={`remote-feed ${connected ? "visible" : ""}`} aria-label="Remote phone camera feed"/>{connected && !hasVideoFrame && <div className="feed-waiting-frames"><div className="signal-icon"><Video size={26}/></div><strong>Stream linked — waiting for video frames…</strong><span>Keep the camera phone unlocked and on the camera tab. If it stays blank across different networks, use the same Wi-Fi or configure a TURN server.</span></div>}{!connected && <div className="feed-no-signal"><div className="signal-icon"><Video size={29}/></div><strong>{connecting ? "Connecting…" : "No camera signal"}</strong><span role="status">{cameraError || "Start the camera node on your phone, wait for LIVE, then connect."}</span><button className="button button-primary" disabled={connecting} onClick={(event) => {event.stopPropagation(); void connectPhone()}}><Wifi size={15}/>{connecting ? "Connecting…" : "Connect camera"}</button></div>}
           <div className="feed-overlay-top"><span className="mono">CAM-01 · LIVE VIDEO</span><span className="mono">{clock?.toLocaleTimeString() || "--:--:--"}</span></div><div className="feed-target" style={{left:`${zone.x*100}%`,top:`${zone.y*100}%`,width:`${zone.w*100}%`,height:`${zone.h*100}%`}}/><div className="feed-overlay-bottom"><span><span className="rec-dot"/> REC</span><span>{connected ? "STREAM ENCRYPTED" : "AWAITING CONNECTION"}</span></div>
           {drawing && <span className="draw-hint">Click two corners to draw a restricted zone</span>}
         </div><div className="feed-toolbar"><div className="toolbar-left"><span className="zone-state"><span/> Restricted zone active</span><span className="toolbar-separator"/><span className="mono muted">SOURCE {accountSettings?.camera_peer_id?.slice(0, 16) || "NOT PAIRED"}</span></div><div className="toolbar-actions"><button className="button button-quiet" onClick={() => setDrawing(!drawing)}>{drawing ? "Cancel drawing" : "Set zone"}</button><button className="button button-quiet" onClick={() => setZone(DEFAULT_ZONE)}>Clear</button><button className="button button-secondary compact" onClick={saveZone}>Save zone</button></div></div></article>

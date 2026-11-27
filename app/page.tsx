@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { Activity, Camera, CameraOff, Circle, ExternalLink, Radio, Wifi } from "lucide-react"
+import { Camera, CameraOff, ExternalLink, Pause, Play, Radio, RefreshCw, ShieldAlert, Wifi } from "lucide-react"
 import { Toaster, toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
+import { PEER_CONFIG } from "@/lib/sentinel"
 import { DetectionOverlay } from "@/components/detection-overlay"
 import { BrandLogo } from "@/components/brand-logo"
 import type { Peer, PeerError, MediaConnection } from "peerjs"
@@ -45,6 +46,10 @@ export default function CameraNode() {
   const [cameraPeerId, setCameraPeerId] = useState("")
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null)
   const [intrusion, setIntrusion] = useState(false)
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment")
+  const [paused, setPaused] = useState(false)
+  const [switchingCamera, setSwitchingCamera] = useState(false)
+  const intrusionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     let active = true
@@ -91,7 +96,7 @@ export default function CameraNode() {
 
         const assignedPeerId = `sentinel-${crypto.randomUUID()}`
         const { default: Peer } = await import("peerjs")
-        peer = new Peer(assignedPeerId)
+        peer = new Peer(assignedPeerId, PEER_CONFIG)
         peerRef.current = peer
         pairingTimeout = setTimeout(() => fail("Could not reach PeerJS signaling. Check your internet connection and retry."), 15000)
 
@@ -160,16 +165,92 @@ export default function CameraNode() {
     return () => clearInterval(ticker)
   }, [started])
 
+  useEffect(() => {
+    return () => {
+      if (intrusionTimerRef.current) clearTimeout(intrusionTimerRef.current)
+    }
+  }, [])
+
+  const triggerIntrusionBanner = () => {
+    setIntrusion(true)
+    if (intrusionTimerRef.current) clearTimeout(intrusionTimerRef.current)
+    intrusionTimerRef.current = setTimeout(() => setIntrusion(false), 5000)
+  }
+
+  const togglePauseStream = () => {
+    const stream = streamRef.current
+    if (!stream) return
+    const nextPaused = !paused
+    stream.getVideoTracks().forEach((track) => { track.enabled = !nextPaused })
+    setPaused(nextPaused)
+    toast.info(nextPaused ? "Camera stream paused" : "Camera stream resumed")
+  }
+
+  const flipCamera = async () => {
+    if (switchingCamera || state !== "LIVE") return
+    const nextMode = facingMode === "environment" ? "user" : "environment"
+    setSwitchingCamera(true)
+    try {
+      const nextStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: nextMode } }, audio: false })
+      const nextTrack = nextStream.getVideoTracks()[0]
+      if (!nextTrack) {
+        nextStream.getTracks().forEach((track) => track.stop())
+        throw new Error("No video track available")
+      }
+      nextTrack.enabled = !paused
+      const oldStream = streamRef.current
+      streamRef.current = nextStream
+      if (videoRef.current) {
+        videoRef.current.srcObject = nextStream
+        setVideoElement(videoRef.current)
+      }
+      callsRef.current.forEach((call) => {
+        const sender = call.peerConnection?.getSenders().find((s) => s.track?.kind === "video")
+        if (sender) void sender.replaceTrack(nextTrack)
+      })
+      oldStream?.getTracks().forEach((track) => track.stop())
+      setFacingMode(nextMode)
+      toast.success(nextMode === "user" ? "Switched to front camera" : "Switched to rear camera")
+    } catch {
+      toast.error("Could not switch camera on this device")
+    } finally {
+      setSwitchingCamera(false)
+    }
+  }
+
   const time = `${String(Math.floor(elapsed / 3600)).padStart(2, "0")}:${String(Math.floor(elapsed / 60) % 60).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`
   return <main className="camera-page">
-    <video ref={videoRef} autoPlay muted playsInline className="camera-feed" aria-label="Live phone camera preview" />
-    <DetectionOverlay video={videoElement} onIntrusion={() => setIntrusion(true)} />
+    <video ref={videoRef} autoPlay muted playsInline className={`camera-feed${paused ? " is-paused" : ""}`} aria-label="Live phone camera preview" />
+    <DetectionOverlay video={paused ? null : videoElement} onIntrusion={triggerIntrusionBanner} />
     <div className="camera-shade" />
     <Toaster theme="light" position="top-center" />
-    <header className="camera-top"><Link href="/viewer" className="brand"><BrandLogo inverse /></Link><span className={`live-pill ${state.toLowerCase()}`}><i />{state}</span></header>
+    <header className="camera-top">
+      <Link href="/viewer" className="brand"><BrandLogo inverse /></Link>
+      <div className="camera-top-right">
+        {state === "LIVE" && (
+          <div className="camera-hud-actions">
+            <button type="button" className="hud-pill-button" onClick={() => void flipCamera()} disabled={switchingCamera} aria-label="Flip camera" title="Flip camera">
+              <RefreshCw size={14} className={switchingCamera ? "spin" : ""} />
+              <span>{facingMode === "environment" ? "Rear" : "Front"}</span>
+            </button>
+            <button type="button" className={`hud-pill-button${paused ? " is-paused" : ""}`} onClick={togglePauseStream} aria-label={paused ? "Resume camera stream" : "Pause camera stream"} title={paused ? "Resume stream" : "Pause stream"}>
+              {paused ? <Play size={14} /> : <Pause size={14} />}
+              <span>{paused ? "Resume" : "Pause"}</span>
+            </button>
+          </div>
+        )}
+        <span className={`live-pill ${state.toLowerCase()}`}><i />{paused && state === "LIVE" ? "PAUSED" : state}</span>
+      </div>
+    </header>
+    {intrusion && state === "LIVE" && (
+      <div className="camera-intrusion-banner" role="alert">
+        <ShieldAlert size={16} />
+        <span>Person detected in restricted zone</span>
+      </div>
+    )}
     <div className="camera-center">{state !== "LIVE" && <div className="camera-wait"><Camera size={30} /><h1>{state === "ERROR" ? "Camera setup failed" : state === "PAIRING" ? "Pairing camera" : "Starting camera node"}</h1><p role="status">{statusMessage}</p>{state === "ERROR" && <button onClick={() => window.location.reload()} className="outline-button"><CameraOff size={16} /> Retry camera</button>}</div>}</div>
-    <div className="rec-label"><span className="rec-dot" /> REC <time>{cameraClock || "--:--:--"}</time></div>
+    <div className="rec-label"><span className={`rec-dot${paused ? " paused" : ""}`} /> {paused ? "PAUSED" : "REC"} <time>{cameraClock || "--:--:--"}</time></div>
     <footer className="camera-footer"><div><span className="meta-label">CAMERA NODE</span><strong>{cameraPeerId ? `${cameraPeerId.slice(0, 16)}…` : "PAIRING…"}</strong></div><div><span className="meta-label">VIEWERS</span><strong><Wifi size={15} /> {viewers}</strong></div><div><span className="meta-label">UPTIME</span><strong>{time}</strong></div><Link href="/viewer" className="monitor-link">Open monitor <ExternalLink size={14} /></Link></footer>
-    <div className="camera-corner"><Radio size={15} /> {intrusion ? "PERSON IN RESTRICTED ZONE" : "Local camera stream"} · AI detection runs on this device</div>
+    <div className="camera-corner"><Radio size={15} /> {intrusion ? "PERSON IN RESTRICTED ZONE" : paused ? "Stream paused" : "Local camera stream"} · AI detection runs on this device</div>
   </main>
 }

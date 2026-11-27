@@ -922,3 +922,224 @@ input[type="range"] {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Camera HUD controls & intrusion banner */
+.camera-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.camera-hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-pill-button {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 6px;
+  background: rgb(16 18 24 / 68%);
+  backdrop-filter: blur(10px);
+  color: #f4f4f5;
+  font-size: 10px;
+  font-weight: 600;
+  transition: background 0.18s, border-color 0.18s;
+}
+
+.hud-pill-button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 16%);
+  border-color: rgb(255 255 255 / 40%);
+}
+
+.hud-pill-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.hud-pill-button.is-paused {
+  color: #fde68a;
+  border-color: rgb(251 191 36 / 45%);
+  background: rgb(120 53 15 / 55%);
+}
+
+.camera-feed.is-paused {
+  filter: grayscale(0.85) brightness(0.55);
+}
+
+.rec-dot.paused {
+  background: #f59e0b;
+  box-shadow: none;
+  animation: none;
+}
+
+.camera-intrusion-banner {
+  position: absolute;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgb(255 255 255 / 24%);
+  background: rgb(215 25 53 / 92%);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  box-shadow: 0 10px 28px rgb(215 25 53 / 38%);
+  white-space: nowrap;
+}
+
+/* Login enhancements */
+.auth-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid #fecdd3;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.auth-field-hint {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.auth-device-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafafa;
+  color: #52525b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.auth-device-tip svg {
+  flex: none;
+  margin-top: 2px;
+  color: #be123c;
+}
+
+.auth-device-tip code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  color: #18181b;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.auth-apk-tag {
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #ffe4e6;
+  color: #9f1239;
+  font: 700 9px 'Geist Mono', ui-monospace, monospace;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 560px) {
+  .hud-pill-button span {
+    display: none;
+  }
+
+  .hud-pill-button {
+    padding: 0 8px;
+  }
+}
+
+.panel-heading .live-pill {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.panel-heading .live-pill.offline-pill {
+  color: #52525b;
+  background: #f4f4f5;
+  border-color: #e4e4e7;
+}
+
+.feed-waiting-frames {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+  color: #e4e4e7;
+  pointer-events: none;
+}
+
+.feed-waiting-frames strong {
+  font-size: 13px;
+  color: #ffffff;
+}
+
+.feed-waiting-frames span {
+  max-width: 340px;
+  font-size: 11px;
+  color: #a1a1aa;
+  line-height: 1.5;
+}
