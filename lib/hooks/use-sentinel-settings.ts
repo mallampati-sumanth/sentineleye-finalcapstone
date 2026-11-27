@@ -35,7 +35,13 @@ async function fetchSettings(): Promise<SentinelSettings> {
     .eq('user_id', user.id)
     .maybeSingle()
   if (error) throw new Error('Could not load your settings.')
-  return { ...DEFAULT_SETTINGS, ...data, zone: data?.zone ?? DEFAULT_ZONE }
+  return {
+    ...DEFAULT_SETTINGS,
+    ...data,
+    zone: data?.zone ?? DEFAULT_ZONE,
+    recipient_email: data?.recipient_email ?? '',
+    telegram_chat_id: data?.telegram_chat_id ?? '',
+  }
 }
 
 export async function saveSentinelSettings(settings: SentinelSettings) {

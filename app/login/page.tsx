@@ -16,7 +16,7 @@ function signInErrorMessage(authError: { code?: string; status?: number }) {
     return 'Invalid email or password.'
   }
   if (authError.status === 0) {
-    return 'Could not reach Supabase Auth. Check the deployed Supabase URL and public anon key, then try again.'
+    return 'Could not reach Supabase Auth. Check the Supabase URL and public publishable or anon key, then try again.'
   }
 
   const reference = authError.code ?? (authError.status ? `HTTP ${authError.status}` : 'unknown error')

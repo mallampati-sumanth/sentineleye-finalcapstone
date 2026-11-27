@@ -8,6 +8,10 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 type AlertResult = { email: 'sent' | 'disabled' | 'not_configured' | 'failed'; telegram: 'sent' | 'disabled' | 'not_configured' | 'failed' }
 
+function escapeTelegramHtml(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -135,18 +139,29 @@ export async function POST(request: Request) {
       try {
         const telegramForm = new FormData()
         telegramForm.set('chat_id', settings.telegram_chat_id)
-        const caption = `SENTINELEYE SECURITY ALERT\nPerson detected in your restricted zone\nDetected: ${eventTime}\nModel confidence: ${Math.round(confidence * 100)}%\nEvent: ${event.id}`
+        const caption = [
+          '🚨 <b>SENTINELEYE · SECURITY ALERT</b>',
+          '',
+          '<b>Person detected</b> in the restricted monitoring zone.',
+          '',
+          `🕒 <b>Detected:</b> ${escapeTelegramHtml(eventTime)}`,
+          `🎯 <b>Confidence:</b> ${Math.round(confidence * 100)}%`,
+          `🆔 <b>Event:</b> <code>${escapeTelegramHtml(event.id)}</code>`,
+          '',
+          '<i>Review the captured snapshot in SentinelEye.</i>',
+        ].join('\n')
         let endpoint = 'sendPhoto'
         if (personImage && personFile instanceof File) {
           endpoint = 'sendMediaGroup'
           telegramForm.set('media', JSON.stringify([
-            { type: 'photo', media: 'attach://overview', caption },
+            { type: 'photo', media: 'attach://overview', caption, parse_mode: 'HTML' },
             { type: 'photo', media: 'attach://person' },
           ]))
           telegramForm.set('overview', new Blob([image], { type: file.type }), 'sentinel-overview.jpg')
           telegramForm.set('person', new Blob([personImage], { type: personFile.type }), 'sentinel-person-detail.jpg')
         } else {
           telegramForm.set('caption', caption)
+          telegramForm.set('parse_mode', 'HTML')
           telegramForm.set('photo', new Blob([image], { type: file.type }), 'sentinel-overview.jpg')
         }
         const response = await fetch(`https://api.telegram.org/bot${token}/${endpoint}`, { method: 'POST', body: telegramForm, signal: AbortSignal.timeout(8000) })

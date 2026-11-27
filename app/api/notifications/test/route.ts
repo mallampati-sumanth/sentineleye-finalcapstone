@@ -84,7 +84,15 @@ export async function POST(request: Request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: settings.telegram_chat_id,
-        text: 'SentinelEye Telegram notification test: your bot setup is working.',
+        text: [
+          '🔐 <b>SENTINELEYE</b>',
+          '',
+          '✅ <b>Telegram connection test</b>',
+          'Your SentinelEye account can send alerts to this chat.',
+          '',
+          '<i>Test only · no intrusion detected</i>',
+        ].join('\n'),
+        parse_mode: 'HTML',
       }),
       signal: AbortSignal.timeout(8000),
     })
