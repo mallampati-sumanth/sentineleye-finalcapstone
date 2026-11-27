@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
+import { BrandLogo } from '@/components/brand-logo'
 import { createClient } from '@/lib/supabase/client'
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
@@ -33,7 +34,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (isPublic) return children
   if (!ready || !user) {
-    return <main className="auth-loading" aria-live="polite"><span className="brand-mark">SE</span><p>Securing your monitoring session…</p></main>
+    return <main className="auth-loading" aria-live="polite"><BrandLogo /><p>Securing your monitoring session…</p></main>
   }
   return children
 }

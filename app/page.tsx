@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { Activity, Camera, CameraOff, Circle, ExternalLink, Radio, Shield, Wifi } from "lucide-react"
+import { Activity, Camera, CameraOff, Circle, ExternalLink, Radio, Wifi } from "lucide-react"
 import { Toaster, toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { DetectionOverlay } from "@/components/detection-overlay"
+import { BrandLogo } from "@/components/brand-logo"
 import type { Peer, PeerError, MediaConnection } from "peerjs"
 
 function cameraErrorMessage(error: { name?: string; type?: string }) {
@@ -157,7 +158,7 @@ export default function CameraNode() {
     <DetectionOverlay video={videoElement} onIntrusion={() => setIntrusion(true)} />
     <div className="camera-shade" />
     <Toaster theme="light" position="top-center" />
-    <header className="camera-top"><Link href="/viewer" className="brand"><span className="brand-mark"><Shield size={19} /></span> Sentinel<span>Eye</span></Link><span className={`live-pill ${state.toLowerCase()}`}><i />{state}</span></header>
+    <header className="camera-top"><Link href="/viewer" className="brand"><BrandLogo inverse /></Link><span className={`live-pill ${state.toLowerCase()}`}><i />{state}</span></header>
     <div className="camera-center">{state !== "LIVE" && <div className="camera-wait"><Camera size={30} /><h1>{state === "ERROR" ? "Camera setup failed" : state === "PAIRING" ? "Pairing camera" : "Starting camera node"}</h1><p role="status">{statusMessage}</p>{state === "ERROR" && <button onClick={() => window.location.reload()} className="outline-button"><CameraOff size={16} /> Retry camera</button>}</div>}</div>
     <div className="rec-label"><span className="rec-dot" /> REC <time>{cameraClock || "--:--:--"}</time></div>
     <footer className="camera-footer"><div><span className="meta-label">CAMERA NODE</span><strong>{cameraPeerId ? `${cameraPeerId.slice(0, 16)}…` : "PAIRING…"}</strong></div><div><span className="meta-label">VIEWERS</span><strong><Wifi size={15} /> {viewers}</strong></div><div><span className="meta-label">UPTIME</span><strong>{time}</strong></div><Link href="/viewer" className="monitor-link">Open monitor <ExternalLink size={14} /></Link></footer>

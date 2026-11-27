@@ -60,6 +60,32 @@ select {
   color: var(--text);
 }
 
+.brand-lockup {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+}
+
+.brand-lockup-icon {
+  display: block;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  object-fit: contain;
+}
+
+.brand-lockup-wordmark {
+  display: block;
+  width: 108px;
+  height: auto;
+  object-fit: contain;
+}
+
+.brand-lockup-inverse .brand-lockup-wordmark {
+  filter: brightness(0) invert(1);
+}
+
 .brand-mark {
   color: #be123c;
   background: #fff1f2;
@@ -846,9 +872,17 @@ input[type="range"] {
     font-size: 13px;
   }
 
-  .topbar .brand-mark {
-    width: 27px;
-    height: 27px;
+  .topbar .brand-lockup {
+    gap: 5px;
+  }
+
+  .topbar .brand-lockup-icon {
+    width: 26px;
+    height: 26px;
+  }
+
+  .topbar .brand-lockup-wordmark {
+    width: 88px;
   }
 
   .device-state {

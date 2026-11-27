@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Eye, EyeOff, Shield } from 'lucide-react'
+import { Camera, Eye, EyeOff } from 'lucide-react'
+import { BrandLogo } from '@/components/brand-logo'
 import { createClient } from '@/lib/supabase/client'
 
 function signInErrorMessage(authError: { code?: string; status?: number }) {
@@ -78,7 +79,7 @@ export default function LoginPage() {
   return <main className="auth-page">
     <div className="auth-grid" aria-hidden="true" />
     <section className="auth-card">
-      <div className="auth-brand"><span className="brand-mark"><Shield size={18}/></span><strong>Sentinel<span>Eye</span></strong></div>
+      <div className="auth-brand"><BrandLogo /></div>
       <div className="auth-intro"><span className="eyebrow">PRIVATE MONITORING</span><h1>{mode === 'signin' ? 'Welcome back' : 'Create your account'}</h1><p>Sign in with the same account on your camera and remote viewer.</p></div>
       <div className="auth-tabs" role="tablist" aria-label="Account access"><button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setError(''); setMessage('') }}>Sign in</button><button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setError(''); setMessage('') }}>Create account</button></div>
       <form className="auth-form" onSubmit={submit}>
