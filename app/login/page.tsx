@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Eye, EyeOff } from 'lucide-react'
+import { Camera, Download, Eye, EyeOff } from 'lucide-react'
 import { BrandLogo } from '@/components/brand-logo'
 import { createClient } from '@/lib/supabase/client'
 
@@ -91,6 +91,11 @@ export default function LoginPage() {
         <button className="button button-primary auth-submit" disabled={busy} type="submit">{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in securely' : 'Create account'}</button>
       </form>
       <p className="auth-footnote"><Camera size={14}/> Your event history and camera snapshots stay private to your account.</p>
+      <a href="/app-release.apk" download="SentinelEye.apk" className="button auth-download">
+        <Download size={16} aria-hidden="true" />
+        Download Android app
+      </a>
+      <p className="auth-download-note">Android only. Open the downloaded APK and follow your device’s installation prompt.</p>
     </section>
   </main>
 }
