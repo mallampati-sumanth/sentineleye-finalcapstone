@@ -17,7 +17,7 @@ export type SentinelSettings = {
 
 export const DEFAULT_SETTINGS: SentinelSettings = {
   zone: DEFAULT_ZONE,
-  alert_cooldown_seconds: 300,
+  alert_cooldown_seconds: 0,
   recipient_email: '',
   telegram_chat_id: '',
   email_enabled: false,

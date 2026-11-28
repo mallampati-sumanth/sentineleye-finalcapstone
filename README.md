@@ -2,6 +2,10 @@
 
 SentinelEye is a local-network smart-surveillance prototype: a phone browser can stream video to the monitoring console, while an ESP32 reports PIR activity to a small FastAPI helper and controls an alarm, LED, and buzzer.
 
+## Project attribution
+
+SentinelEye is the capstone project of Mallampati Sumanth, who completed the project. The project/repository URL and the Git commits are associated with Mannam Ganesh Babu; the repository URL and commit history do not identify Sumanth as the committer.
+
 ## Project layout
 
 - `app/` — responsive web console, camera node, settings, and event gallery

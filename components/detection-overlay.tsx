@@ -8,10 +8,16 @@ import { toast } from 'sonner'
 type Props = { video: HTMLVideoElement | null; onIntrusion: () => void }
 type Prediction = { class: string; score: number; bbox: [number, number, number, number] }
 
+const PERSON_MIN_CONFIDENCE = 0.62
+const REQUIRED_CONSECUTIVE_FRAMES = 2
+const ABSENCE_RESET_MS = 3000
+
 export function DetectionOverlay({ video, onIntrusion }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const lastAttemptRef = useRef(0)
-  const blockedUntilRef = useRef(0)
+  const consecutiveHitsRef = useRef(0)
+  const personPresentRef = useRef(false)
+  const lastSeenInZoneRef = useRef(0)
   const callbackRef = useRef(onIntrusion)
   const { data: settings } = useSentinelSettings()
   callbackRef.current = onIntrusion
@@ -44,12 +50,10 @@ export function DetectionOverlay({ video, onIntrusion }: Props) {
       try {
         const response = await fetch('/api/events', { method: 'POST', body: form })
         const result = await response.json()
-        if (response.status === 429 && result.remainingSeconds) {
-          blockedUntilRef.current = Date.now() + result.remainingSeconds * 1000
+        if (response.status === 429) {
           return
         }
         if (!response.ok) throw new Error(result.error || 'Could not save the detection.')
-        blockedUntilRef.current = Date.now() + (settings?.alert_cooldown_seconds ?? 300) * 1000
         const alertStatuses = Object.entries(result.alerts ?? {})
         const alertSummary = alertStatuses.map(([channel, status]) => `${channel}: ${status}`).join(' · ')
         const undelivered = alertStatuses.some(([, status]) => status === 'failed' || status === 'not_configured')
@@ -58,7 +62,7 @@ export function DetectionOverlay({ video, onIntrusion }: Props) {
         else toast.info('Person event saved; notifications are disabled.', { description: alertSummary })
         callbackRef.current()
       } catch (error) {
-        blockedUntilRef.current = Date.now() + 5000
+        personPresentRef.current = false
         console.warn('Could not save SentinelEye detection', error)
       }
     }
@@ -90,39 +94,60 @@ export function DetectionOverlay({ video, onIntrusion }: Props) {
         if (!alive) return
         let target: Prediction | null = null
         for (const prediction of predictions) {
-          if (prediction.class !== 'person' || prediction.score < 0.5) continue
+          if (prediction.class !== 'person' || prediction.score < PERSON_MIN_CONFIDENCE) continue
           const [x, y, boxWidth, boxHeight] = prediction.bbox
-          ctx.strokeStyle = '#ff3b5c'
-          ctx.lineWidth = 3
-          ctx.strokeRect(x * scale + offsetX, y * scale + offsetY, boxWidth * scale, boxHeight * scale)
-          ctx.fillStyle = '#ff3b5c'
-          ctx.font = '600 12px sans-serif'
-          ctx.fillText(`PERSON ${Math.round(prediction.score * 100)}%`, x * scale + offsetX, Math.max(16, y * scale + offsetY - 5))
           const centerX = (x + boxWidth / 2) / width
           const centerY = (y + boxHeight / 2) / height
-          if (centerX >= zone.x && centerX <= zone.x + zone.w && centerY >= zone.y && centerY <= zone.y + zone.h && (!target || prediction.score > target.score)) target = prediction
+          const inZone = centerX >= zone.x && centerX <= zone.x + zone.w && centerY >= zone.y && centerY <= zone.y + zone.h
+          if (inZone && (!target || prediction.score > target.score)) target = prediction
+          const confirmed = inZone && consecutiveHitsRef.current + 1 >= REQUIRED_CONSECUTIVE_FRAMES
+          ctx.strokeStyle = confirmed ? '#ff3b5c' : '#ffb300'
+          ctx.lineWidth = 3
+          ctx.strokeRect(x * scale + offsetX, y * scale + offsetY, boxWidth * scale, boxHeight * scale)
+          ctx.fillStyle = confirmed ? '#ff3b5c' : '#ffb300'
+          ctx.font = '600 12px sans-serif'
+          ctx.fillText(
+            `${confirmed ? 'PERSON' : 'VERIFYING'} ${Math.round(prediction.score * 100)}%`,
+            x * scale + offsetX,
+            Math.max(16, y * scale + offsetY - 5),
+          )
         }
-        if (target && Date.now() >= blockedUntilRef.current && Date.now() - lastAttemptRef.current > 5000) {
-          lastAttemptRef.current = Date.now()
-          const [x, y, boxWidth, boxHeight] = target.bbox
-          const padX = boxWidth * 0.14
-          const padY = boxHeight * 0.14
-          const cropX = Math.max(0, x - padX)
-          const cropY = Math.max(0, y - padY)
-          const cropWidth = Math.min(width - cropX, boxWidth + padX * 2)
-          const cropHeight = Math.min(height - cropY, boxHeight + padY * 2)
-          const capture = document.createElement('canvas')
-          capture.width = width
-          capture.height = height
-          capture.getContext('2d')?.drawImage(video, 0, 0, width, height)
-          const personCapture = document.createElement('canvas')
-          personCapture.width = Math.max(1, Math.round(cropWidth))
-          personCapture.height = Math.max(1, Math.round(cropHeight))
-          personCapture.getContext('2d')?.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, personCapture.width, personCapture.height)
-          const toJpeg = (canvas: HTMLCanvasElement) => new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.86))
-          void Promise.all([toJpeg(capture), toJpeg(personCapture)]).then(([frameBlob, personBlob]) => {
-            if (frameBlob && personBlob && alive) void saveDetection(frameBlob, personBlob, target!.score)
-          })
+        const now = Date.now()
+        if (target) {
+          lastSeenInZoneRef.current = now
+          consecutiveHitsRef.current += 1
+          if (
+            consecutiveHitsRef.current >= REQUIRED_CONSECUTIVE_FRAMES &&
+            !personPresentRef.current &&
+            now - lastAttemptRef.current > 2000
+          ) {
+            lastAttemptRef.current = now
+            personPresentRef.current = true
+            const [x, y, boxWidth, boxHeight] = target.bbox
+            const padX = boxWidth * 0.14
+            const padY = boxHeight * 0.14
+            const cropX = Math.max(0, x - padX)
+            const cropY = Math.max(0, y - padY)
+            const cropWidth = Math.min(width - cropX, boxWidth + padX * 2)
+            const cropHeight = Math.min(height - cropY, boxHeight + padY * 2)
+            const capture = document.createElement('canvas')
+            capture.width = width
+            capture.height = height
+            capture.getContext('2d')?.drawImage(video, 0, 0, width, height)
+            const personCapture = document.createElement('canvas')
+            personCapture.width = Math.max(1, Math.round(cropWidth))
+            personCapture.height = Math.max(1, Math.round(cropHeight))
+            personCapture.getContext('2d')?.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, personCapture.width, personCapture.height)
+            const toJpeg = (canvas: HTMLCanvasElement) => new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.86))
+            void Promise.all([toJpeg(capture), toJpeg(personCapture)]).then(([frameBlob, personBlob]) => {
+              if (frameBlob && personBlob && alive) void saveDetection(frameBlob, personBlob, target!.score)
+            })
+          }
+        } else {
+          consecutiveHitsRef.current = 0
+          if (personPresentRef.current && now - lastSeenInZoneRef.current >= ABSENCE_RESET_MS) {
+            personPresentRef.current = false
+          }
         }
       } catch (error) {
         console.warn('SentinelEye inference frame failed', error)
@@ -131,7 +156,7 @@ export function DetectionOverlay({ video, onIntrusion }: Props) {
 
     load()
     return () => { alive = false; cancelAnimationFrame(frame) }
-  }, [video, zone, settings?.alert_cooldown_seconds])
+  }, [video, zone])
 
   return <canvas ref={canvasRef} className="detection-overlay" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }} aria-hidden="true" />
 }

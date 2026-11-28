@@ -1143,3 +1143,14 @@ input[type="range"] {
   color: #a1a1aa;
   line-height: 1.5;
 }
+
+.feed-window:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  background: #090b10;
+}
+
+.feed-window:fullscreen .remote-feed {
+  object-fit: contain;
+}
